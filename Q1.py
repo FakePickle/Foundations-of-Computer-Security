@@ -1,74 +1,53 @@
-from Cryptodome.Cipher import Salsa20
 import gmpy2
-import os
+from Crypto.Random import get_random_bytes
+from Crypto.Util import number
 
-# Generating a random 16-byte String key for Salsa20 encryption
-def generate_key() -> bytes:
-    return os.urandom(16)
+def generate_symmetric_key():
+    """Generate a random 16-byte key for Salsa20 encryption."""
+    return get_random_bytes(16)
 
-# Encrypting plaintext using Salsa20 encryption
-def encrypt(key: bytes, plaintext: bytes) -> bytes:
-    cipher = Salsa20.new(key)
-    return cipher.encrypt(plaintext)
+def generate_rsa_keys(p: int, q: int):
+    """Generate RSA public and private keys given two prime numbers."""
+    n = p * q
+    phi = (p - 1) * (q - 1)
+    e = 65537  # Common choice for e
+    d = gmpy2.invert(e, phi)  # Compute modular inverse
+    return (n, e), (n, int(d))
 
-# Decrypting ciphertext using Salsa20 encryption
-def decrypt(key: bytes, ciphertext: bytes) -> bytes:
-    cipher = Salsa20.new(key)
-    return cipher.decrypt(ciphertext)
-
-def rsa_encrypt(public_key: tuple, plaintext: bytes) -> bytes:
+def rsa_encrypt(message: bytes, public_key: tuple) -> int:
+    """Encrypt a message using RSA public key."""
     n, e = public_key
-    plaintext_int = int.from_bytes(plaintext, "big")
-    
-    # Ensure plaintext is smaller than n
-    if plaintext_int >= n:
-        raise ValueError("Plaintext too large for RSA encryption")
+    message_int = int.from_bytes(message, byteorder='big')
+    ciphertext = pow(message_int, e, n)
+    return ciphertext
 
-    encrypted_int = pow(plaintext_int, e, n)
-    return encrypted_int.to_bytes((n.bit_length() + 7) // 8, "big")
-
-
-def rsa_decrypt(private_key: tuple, ciphertext: bytes) -> bytes:
+def rsa_decrypt(ciphertext: int, private_key: tuple) -> bytes:
+    """Decrypt a message using RSA private key."""
     n, d = private_key
-    ciphertext_int = int.from_bytes(ciphertext, "big")
-    decrypted_int = pow(ciphertext_int, d, n)
-    
-    return decrypted_int.to_bytes((n.bit_length() + 7) // 8, "big")
+    decrypted_int = pow(ciphertext, d, n)
+    decrypted_bytes = decrypted_int.to_bytes((decrypted_int.bit_length() + 7) // 8, byteorder='big')
+    return decrypted_bytes
 
-
-# Main function
+# Main Function
 if __name__ == "__main__":
-    """
-    A. Alice generates the shared symmetric key: Generate random 16 byte string. This
-    would be used as the key for Salsa20 encryption. Return this byte string. [3]
-    """
-    # Generate a random key for Alice
-    key = generate_key()
+    # Step A: Alice generates a symmetric key
+    symmetric_key = generate_symmetric_key()
+    print(f"Alice's symmetric key: {symmetric_key.hex()}")
 
-    # Printing Alice's key
-    print("Alice's key: ", key)
+    # Step B: Bob generates RSA keys
+    p = number.getPrime(128)
+    q = number.getPrime(128)
+    public_key, private_key = generate_rsa_keys(p, q)
+    print(f"Bob's Public Key: {public_key}")
+    print(f"Bob's Private Key: {private_key}")
 
-    """
-    B. Bob generates his asymmetric keys: Use the GMP library to implement RSA. Take
-    prime numbers 'p' and 'q' as inputs and generate 'n', 'e' and 'd' for Bob. (n, e) is the
-    public key, (n, d) is the private key. Return Bob's public key and private key. [7]
-    """
-    # Taking input for p and q for RSA encryption for Bob and generate n, e and d
-    p = int(input("Enter p: "))
-    q = int(input("Enter q: "))
-    n = p*q
-    phi = (p-1)*(q-1)
-    e = 65537
-    d = gmpy2.invert(e, phi)
+    # Step C: Alice encrypts the symmetric key using Bob's public key
+    encrypted_symmetric_key = rsa_encrypt(symmetric_key, public_key)
+    print(f"Encrypted symmetric key: {encrypted_symmetric_key}")
 
-    # Printing Bob's public and private keys
-    print("Bob's public key: (" + str(n) + "," + str(e) + ")")
-    print("Bob's private key: (" + str(n) + "," + str(d) + ")")
+    # Step D: Bob decrypts the symmetric key using his private key
+    decrypted_symmetric_key = rsa_decrypt(encrypted_symmetric_key, private_key)
+    print(f"Bob's decrypted symmetric key: {decrypted_symmetric_key.hex()}")
 
-    """
-    C. Alice uses Bob's public key to encrypt K: Use the symmetric key generated in part 1.a.
-    as the message and encrypt it using Bob's public key. Return the ciphertext 'c'. [5]
-    """
-    encrypted_message = rsa_encrypt((n, e), key)
-    print("Cipher Text: ", encrypted_message)
-    print("Decrypting the cipher text: ", rsa_decrypt((n, d), encrypted_message))
+    # Verify correctness
+    assert symmetric_key == decrypted_symmetric_key, "Decryption failed!"
